@@ -25,7 +25,7 @@ final class ButtonMapper {
     // Track standalone modifiers held by mouse buttons (buttonIndex -> modifier flag)
     private var activeModifiers: [Int: CGEventFlags] = [:]
     
-    private var currentModifierFlags: CGEventFlags {
+    var currentModifierFlags: CGEventFlags {
         var flags: CGEventFlags = []
         for f in activeModifiers.values {
             flags.insert(f)
@@ -130,7 +130,7 @@ final class ButtonMapper {
         }
 
         // Release standalone modifiers
-        if let modFlag = activeModifiers.removeValue(forKey: buttonIndex) {
+        if let _ = activeModifiers.removeValue(forKey: buttonIndex) {
             // Find keycode from mapping if possible
             let action = isHypershiftActive ? (hypershiftMapping[buttonIndex] ?? mapping[buttonIndex]) : mapping[buttonIndex]
             if case .keySequence(let keys, _) = action, let stroke = keys.first, let code = effectiveKeyCode(for: stroke) {

@@ -117,7 +117,14 @@ final class ActionEditorViewController: NSViewController {
         ShortcutPreset(name: "F9", key: "f9", modifiers: [], isHeader: false),
         ShortcutPreset(name: "F10", key: "f10", modifiers: [], isHeader: false),
         ShortcutPreset(name: "F11", key: "f11", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F12", key: "f12", modifiers: [], isHeader: false)
+        ShortcutPreset(name: "F12", key: "f12", modifiers: [], isHeader: false),
+        
+        .header("Modifier Keys"),
+        ShortcutPreset(name: "Command", key: "command", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "Shift", key: "shift", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "Option", key: "option", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "Control", key: "control", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "Fn", key: "fn", modifiers: [], isHeader: false)
     ]
 
     // Text Snippet

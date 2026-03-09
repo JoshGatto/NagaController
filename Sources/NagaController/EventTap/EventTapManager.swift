@@ -103,6 +103,13 @@ final class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
+        // Inject synthetic flags from mouse-held modifiers (standalone modifiers)
+        let mouseMods = ButtonMapper.shared.currentModifierFlags
+        if !mouseMods.isEmpty {
+            // Apply mouse modifiers to this event
+            event.flags = event.flags.union(mouseMods)
+        }
+
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         
         if type == .keyDown || type == .flagsChanged {
