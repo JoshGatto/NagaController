@@ -21,6 +21,17 @@ final class ButtonMapper {
 
     // Track active press-and-hold mappings (buttonIndex -> (keyCode, flags))
     private var activeHolds: [Int: (CGKeyCode, CGEventFlags)] = [:]
+    
+    // Track standalone modifiers held by mouse buttons (buttonIndex -> modifier flag)
+    private var activeModifiers: [Int: CGEventFlags] = [:]
+    
+    private var currentModifierFlags: CGEventFlags {
+        var flags: CGEventFlags = []
+        for f in activeModifiers.values {
+            flags.insert(f)
+        }
+        return flags
+    }
 
     // Allow external configuration to replace the mapping
     func updateMapping(_ newMapping: [Int: ActionType]) {
@@ -67,6 +78,19 @@ final class ButtonMapper {
         case .keySequence(let keys, _):
             if let stroke = keys.first, keys.count == 1 {
                 let keyCode = effectiveKeyCode(for: stroke)
+                
+                // NEW: Standalone modifier support (Shift, CMD, etc.)
+                if let code = keyCode, let modFlag = modifierFlag(for: code), stroke.modifiers.isEmpty {
+                    activeModifiers[buttonIndex] = modFlag
+                    if let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) { // FlagsChanged is usually handled by virtualKey + flags
+                        event.type = .flagsChanged
+                        event.flags = currentModifierFlags
+                        event.post(tap: .cghidEventTap)
+                        NSLog("[Mapping] Modifier hold start: button \(buttonIndex) -> \(stroke.displayLabel), cumulative flags: \(event.flags)")
+                    }
+                    return
+                }
+
                 let flags = modifierFlags(from: stroke.modifiers)
                 if let code = keyCode, let eventDown = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) {
                     eventDown.flags = flags
@@ -102,6 +126,21 @@ final class ButtonMapper {
             }
             
             NSLog("[Mapping] Hypershift state: holders=\(hypershiftHolders.count), toggled=\(isHypershiftToggled) (Active=\(isHypershiftActive))")
+            return
+        }
+
+        // Release standalone modifiers
+        if let modFlag = activeModifiers.removeValue(forKey: buttonIndex) {
+            // Find keycode from mapping if possible
+            let action = isHypershiftActive ? (hypershiftMapping[buttonIndex] ?? mapping[buttonIndex]) : mapping[buttonIndex]
+            if case .keySequence(let keys, _) = action, let stroke = keys.first, let code = effectiveKeyCode(for: stroke) {
+                if let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) {
+                    event.type = .flagsChanged
+                    event.flags = currentModifierFlags
+                    event.post(tap: .cghidEventTap)
+                    NSLog("[Mapping] Modifier hold end: button \(buttonIndex) -> \(stroke.displayLabel), cumulative flags: \(event.flags)")
+                }
+            }
             return
         }
         
@@ -173,6 +212,20 @@ final class ButtonMapper {
             }
         }
         return flags
+    }
+    private func isModifier(_ keyCode: CGKeyCode) -> Bool {
+        return modifierFlag(for: keyCode) != nil
+    }
+
+    private func modifierFlag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        switch Int(keyCode) {
+        case kVK_Command: return .maskCommand
+        case kVK_Shift: return .maskShift
+        case kVK_Option: return .maskAlternate
+        case kVK_Control: return .maskControl
+        case kVK_Function: return .maskSecondaryFn
+        default: return nil
+        }
     }
 
     private func runShell(_ command: String) {

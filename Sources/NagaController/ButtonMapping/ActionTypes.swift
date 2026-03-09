@@ -178,6 +178,12 @@ extension KeyStroke {
         add(["f18"], code: kVK_F18)
         add(["f19"], code: kVK_F19)
         add(["f20"], code: kVK_F20)
+        
+        add(["command", "cmd"], code: kVK_Command)
+        add(["shift"], code: kVK_Shift)
+        add(["option", "alt"], code: kVK_Option)
+        add(["control", "ctrl"], code: kVK_Control)
+        add(["function", "fn"], code: kVK_Function)
 
         add(["kp0", "keypad 0"], code: kVK_ANSI_Keypad0)
         add(["kp1", "keypad 1"], code: kVK_ANSI_Keypad1)
@@ -244,7 +250,12 @@ extension KeyStroke {
         UInt16(kVK_F17): "F17",
         UInt16(kVK_F18): "F18",
         UInt16(kVK_F19): "F19",
-        UInt16(kVK_F20): "F20"
+        UInt16(kVK_F20): "F20",
+        UInt16(kVK_Command): "Command",
+        UInt16(kVK_Shift): "Shift",
+        UInt16(kVK_Option): "Option",
+        UInt16(kVK_Control): "Control",
+        UInt16(kVK_Function): "Function"
     ]
 
     private static let modifierSymbolMap: [String: String] = [
