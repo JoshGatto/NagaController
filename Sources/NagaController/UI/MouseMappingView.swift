@@ -192,6 +192,8 @@ final class MouseMappingView: NSView {
             return d ?? "Macro"
         case .profileSwitch(let p, let d):
             return d ?? "Switch Profile: \(p)"
+        case .hypershift:
+            return "Hypershift Modifier"
         }
     }
 }

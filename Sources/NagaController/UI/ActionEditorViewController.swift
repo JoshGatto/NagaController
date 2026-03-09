@@ -39,12 +39,29 @@ private final class KeyCaptureField: NSTextField {
     }
 }
 
+private struct ShortcutPreset {
+    let name: String
+    let key: String
+    let modifiers: [String]
+    let isHeader: Bool
+    
+    static func header(_ name: String) -> ShortcutPreset {
+        ShortcutPreset(name: name, key: "", modifiers: [], isHeader: true)
+    }
+}
+
 final class ActionEditorViewController: NSViewController {
     private let buttonIndex: Int
     private let onComplete: (ActionType?) -> Void
-
-    private let segmented = NSSegmentedControl(labels: ["Key", "App", "Cmd", "Text", "Profile"], trackingMode: .selectOne, target: nil, action: nil)
-
+    private var initialRemappingState: Bool = false
+    
+    private let segmented = NSSegmentedControl(labels: ["Key", "App", "Cmd", "Text", "Profile", "Hypershift"], trackingMode: .selectOne, target: nil, action: nil)
+    private let layerSegmented = NSSegmentedControl(labels: ["Standard Layer", "Hypershift Layer"], trackingMode: .selectOne, target: nil, action: nil)
+    
+    // Temporary storage for edits before saving
+    private var tempStandardAction: ActionType?
+    private var tempHypershiftAction: ActionType?
+    
     // Common
     private let descriptionField = NSTextField(string: "")
 
@@ -64,11 +81,56 @@ final class ActionEditorViewController: NSViewController {
     // Profile Switch
     private let profilePopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
+    // Presets
+    private let presetsPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let presets: [ShortcutPreset] = [
+        .header("Editing"),
+        ShortcutPreset(name: "Copy", key: "c", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Paste", key: "v", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Cut", key: "x", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Undo", key: "z", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Redo", key: "z", modifiers: ["cmd", "shift"], isHeader: false),
+        ShortcutPreset(name: "Select All", key: "a", modifiers: ["cmd"], isHeader: false),
+        
+        .header("System"),
+        ShortcutPreset(name: "Mission Control", key: "up arrow", modifiers: ["ctrl"], isHeader: false),
+        ShortcutPreset(name: "Application Windows", key: "down arrow", modifiers: ["ctrl"], isHeader: false),
+        ShortcutPreset(name: "Show Desktop", key: "f11", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "Spotlight", key: "space", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Siri", key: "space", modifiers: ["cmd"], isHeader: false), // Note: user might need to adjust
+        
+        .header("Navigation"),
+        ShortcutPreset(name: "Switch App", key: "tab", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Switch Window", key: "`", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Back", key: "[", modifiers: ["cmd"], isHeader: false),
+        ShortcutPreset(name: "Forward", key: "]", modifiers: ["cmd"], isHeader: false),
+        
+        .header("Function Keys"),
+        ShortcutPreset(name: "F1", key: "f1", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F2", key: "f2", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F3", key: "f3", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F4", key: "f4", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F5", key: "f5", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F6", key: "f6", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F7", key: "f7", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F8", key: "f8", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F9", key: "f9", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F10", key: "f10", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F11", key: "f11", modifiers: [], isHeader: false),
+        ShortcutPreset(name: "F12", key: "f12", modifiers: [], isHeader: false)
+    ]
+
     // Text Snippet
     private let textSnippetView = NSTextView(frame: .zero)
     private let textSnippetScroll = NSScrollView(frame: .zero)
 
     private let contentStack = NSStackView()
+    
+    // Hardware Learning
+    private let hardwareBindingLabel = NSTextField(labelWithString: "Trigger: (Default)")
+    private let learnButton = NSButton(title: "Learn Hardware Trigger…", target: nil, action: nil)
+    private let clearHardwareButton = NSButton(title: "", target: nil, action: nil)
+    private var isLearningHardware = false
 
     private var recordedKeyCode: UInt16?
     private var recordedKeyIdentifier: String?
@@ -76,6 +138,13 @@ final class ActionEditorViewController: NSViewController {
     init(buttonIndex: Int, onComplete: @escaping (ActionType?) -> Void) {
         self.buttonIndex = buttonIndex
         self.onComplete = onComplete
+        
+        let standardActionMap = ConfigManager.shared.mappingForCurrentProfile()
+        let hypershiftActionMap = ConfigManager.shared.hypershiftMappingForCurrentProfile()
+        
+        self.tempStandardAction = standardActionMap[buttonIndex]
+        self.tempHypershiftAction = hypershiftActionMap[buttonIndex]
+        
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -87,6 +156,10 @@ final class ActionEditorViewController: NSViewController {
 
         let header = NSTextField(labelWithString: "Edit Action — Button \(buttonIndex)")
         header.font = .systemFont(ofSize: 15, weight: .semibold)
+        
+        layerSegmented.target = self
+        layerSegmented.action = #selector(layerChanged)
+        layerSegmented.selectedSegment = 0
 
         segmented.target = self
         segmented.action = #selector(segmentedChanged)
@@ -127,7 +200,22 @@ final class ActionEditorViewController: NSViewController {
 
         let keyRow = NSStackView(views: [NSTextField(labelWithString: "Key:"), keyField, NSView()])
         keyRow.spacing = 8
-        let modsRow = NSStackView(views: [NSTextField(labelWithString: "Modifiers:"), modCmd, modAlt, modCtrl, modShift, NSView()])
+        
+        presetsPopup.addItem(withTitle: "Presets…")
+        for p in presets {
+            if p.isHeader {
+                presetsPopup.menu?.addItem(NSMenuItem.separator())
+                let item = NSMenuItem(title: p.name, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                presetsPopup.menu?.addItem(item)
+            } else {
+                presetsPopup.addItem(withTitle: p.name)
+            }
+        }
+        presetsPopup.target = self
+        presetsPopup.action = #selector(presetSelected)
+        
+        let modsRow = NSStackView(views: [NSTextField(labelWithString: "Modifiers:"), modCmd, modAlt, modCtrl, modShift, NSView(), presetsPopup])
         modsRow.spacing = 8
         let keyHint = NSTextField(labelWithString: "Click the capture box above, then press the keyboard shortcut you want to record (e.g. ⇧⌘4).")
         keyHint.font = .systemFont(ofSize: 11)
@@ -188,6 +276,14 @@ final class ActionEditorViewController: NSViewController {
         profRow.spacing = 8
         let profGroup = group("Profile Switch", views: [profRow])
 
+        // Hypershift UI
+        let hsHint = NSTextField(labelWithString: "This button will act as the Hypershift modifier. While held down, it unlocks the secondary set of functions on all other buttons.")
+        hsHint.font = .systemFont(ofSize: 11)
+        hsHint.textColor = .secondaryLabelColor
+        hsHint.lineBreakMode = .byWordWrapping
+        hsHint.maximumNumberOfLines = 3
+        let hsGroup = group("Hypershift Modifier", views: [hsHint])
+
         // Content stack
         contentStack.orientation = .vertical
         contentStack.spacing = 10
@@ -210,23 +306,46 @@ final class ActionEditorViewController: NSViewController {
         save.imagePosition = .imageLeading
         save.keyEquivalent = "\r"
         save.toolTip = "Save changes"
+        
+        learnButton.target = self
+        learnButton.action = #selector(learnHardwareTapped)
+        learnButton.font = .systemFont(ofSize: 12)
+        UIStyle.styleSecondaryButton(learnButton)
+        
+        clearHardwareButton.target = self
+        clearHardwareButton.action = #selector(clearHardwareTapped)
+        clearHardwareButton.image = UIStyle.symbol("xmark.circle.fill", size: 12)
+        clearHardwareButton.isBordered = false
+        clearHardwareButton.toolTip = "Reset to default button mapping"
+        
+        hardwareBindingLabel.font = .systemFont(ofSize: 11)
+        hardwareBindingLabel.textColor = .secondaryLabelColor
+        
+        let hardwareStack = NSStackView(views: [hardwareBindingLabel, learnButton, clearHardwareButton])
+        hardwareStack.spacing = 8
+
+        buttonsStack.addArrangedSubview(hardwareStack)
         buttonsStack.addArrangedSubview(NSView())
         buttonsStack.addArrangedSubview(cancel)
         buttonsStack.addArrangedSubview(save)
 
         view.addSubview(header)
+        view.addSubview(layerSegmented)
         view.addSubview(segmented)
         view.addSubview(descStack)
         view.addSubview(contentStack)
         view.addSubview(buttonsStack)
 
-        for v in [header, segmented, descStack, contentStack, buttonsStack] { v.translatesAutoresizingMaskIntoConstraints = false }
+        for v in [header, layerSegmented, segmented, descStack, contentStack, buttonsStack] { v.translatesAutoresizingMaskIntoConstraints = false }
 
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            
+            layerSegmented.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            layerSegmented.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            segmented.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            segmented.topAnchor.constraint(equalTo: layerSegmented.bottomAnchor, constant: 14),
             segmented.leadingAnchor.constraint(equalTo: header.leadingAnchor),
 
             descStack.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 10),
@@ -248,9 +367,14 @@ final class ActionEditorViewController: NSViewController {
         contentStack.addArrangedSubview(cmdGroup)
         contentStack.addArrangedSubview(textGroup)
         contentStack.addArrangedSubview(profGroup)
+        contentStack.addArrangedSubview(hsGroup)
         selectGroup(index: 0)
 
         preloadCurrent()
+        updateHardwareDisplay()
+        
+        initialRemappingState = !EventTapManager.shared.isListeningOnly
+        EventTapManager.shared.start(listenOnly: true)
     }
 
     private func group(_ title: String, views: [NSView]) -> NSView {
@@ -273,6 +397,17 @@ final class ActionEditorViewController: NSViewController {
         }
     }
 
+    @objc private func layerChanged() {
+        // Save current UI state to temp var
+        let action = buildActionFromUI()
+        if layerSegmented.selectedSegment == 1 {
+            tempStandardAction = action // Switched to Hypershift, save Standard
+        } else {
+            tempHypershiftAction = action // Switched to Standard, save Hypershift
+        }
+        preloadCurrent()
+    }
+
     @objc private func segmentedChanged() {
         selectGroup(index: segmented.selectedSegment)
         if segmented.selectedSegment == 0 {
@@ -289,13 +424,21 @@ final class ActionEditorViewController: NSViewController {
     }
 
     private func preloadCurrent() {
-        let current = ConfigManager.shared.mappingForCurrentProfile()[buttonIndex]
+        let current = layerSegmented.selectedSegment == 0 ? tempStandardAction : tempHypershiftAction
         recordedKeyCode = nil
         recordedKeyIdentifier = nil
         updateKeyFieldDisplay()
         applyModifiers(from: [])
         textSnippetView.string = ""
-        switch current {
+        descriptionField.stringValue = ""
+        
+        guard let action = current else {
+            segmented.selectedSegment = 0
+            selectGroup(index: 0)
+            return
+        }
+        
+        switch action {
         case .keySequence(let keys, let d):
             if let first = keys.first {
                 recordedKeyIdentifier = first.key
@@ -326,7 +469,11 @@ final class ActionEditorViewController: NSViewController {
             descriptionField.stringValue = d ?? ""
             segmented.selectedSegment = 4
             selectGroup(index: 4)
-        case .macro, .none:
+        case .hypershift:
+            descriptionField.stringValue = ""
+            segmented.selectedSegment = 5
+            selectGroup(index: 5)
+        case .macro:
             // Not supported in this lightweight editor yet
             break
         }
@@ -338,45 +485,68 @@ final class ActionEditorViewController: NSViewController {
     }
 
     @objc private func saveTapped() {
+        // Save current UI state to temp
+        let finalAction = buildActionFromUI()
+        if layerSegmented.selectedSegment == 0 {
+            tempStandardAction = finalAction
+        } else {
+            tempHypershiftAction = finalAction
+        }
+        
+        // Save immediately bypassing onComplete wrapper or by calling setAction directly.
+        // Wait, onComplete tells MappingViewController to clear the sheet and reload logic.
+        // We'll call setHypershiftAction directly here, and use onComplete for standard action.
+        ConfigManager.shared.setHypershiftAction(forButton: buttonIndex, action: tempHypershiftAction)
+        
+        onComplete(tempStandardAction)
+        dismiss(self)
+    }
+    
+    private func buildActionFromUI() -> ActionType? {
         let desc = descriptionField.stringValue.isEmpty ? nil : descriptionField.stringValue
         switch segmented.selectedSegment {
         case 0:
             guard let identifier = recordedKeyIdentifier, !identifier.isEmpty else {
-                onComplete(nil)
-                dismiss(self)
-                return
+                return nil
             }
             let mods = currentModifiers()
             let code = recordedKeyCode ?? KeyStroke.keyCode(for: identifier)
             let stroke = KeyStroke(key: identifier, modifiers: mods, keyCode: code)
-            onComplete(.keySequence(keys: [stroke], description: desc))
+            return .keySequence(keys: [stroke], description: desc)
         case 1:
             if let url = appPath.url {
-                onComplete(.application(path: url.path, description: desc))
+                return .application(path: url.path, description: desc)
             } else {
-                onComplete(nil)
+                return nil
             }
         case 2:
             let cmd = commandField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if cmd.isEmpty { onComplete(nil) } else { onComplete(.systemCommand(command: cmd, description: desc)) }
+            if cmd.isEmpty { return nil } else { return .systemCommand(command: cmd, description: desc) }
         case 3:
             let snippet = textSnippetView.string
             if snippet.trimmingCharacters(in: .newlines).isEmpty {
-                onComplete(nil)
+                return nil
             } else {
-                onComplete(.textSnippet(text: snippet, description: desc))
+                return .textSnippet(text: snippet, description: desc)
             }
         case 4:
-            if let title = profilePopup.titleOfSelectedItem { onComplete(.profileSwitch(profile: title, description: desc)) } else { onComplete(nil) }
+            if let title = profilePopup.titleOfSelectedItem { return .profileSwitch(profile: title, description: desc) } else { return nil }
+        case 5:
+            return .hypershift
         default:
-            onComplete(nil)
+            return nil
         }
-        dismiss(self)
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        EventTapManager.shared.start(listenOnly: !initialRemappingState)
     }
 
     private func set(mod: NSButton, from on: Bool) { mod.state = on ? .on : .off }
 
     private func capture(event: NSEvent) {
+        if isLearningHardware { return }
         if event.type == .flagsChanged {
             applyModifiers(from: event.modifierFlags)
             updateKeyFieldDisplay()
@@ -453,6 +623,128 @@ final class ActionEditorViewController: NSViewController {
         panel.beginSheetModal(for: self.view.window!) { [weak self] resp in
             guard resp == .OK, let url = panel.url else { return }
             self?.appPath.url = url
+        }
+    }
+
+    @objc private func presetSelected() {
+        let title = presetsPopup.titleOfSelectedItem
+        presetsPopup.selectItem(at: 0) // Reset to "Presets..."
+        
+        guard let title = title, title != "Presets…" else { return }
+        guard let preset = presets.first(where: { $0.name == title && !$0.isHeader }) else { return }
+        
+        recordedKeyIdentifier = preset.key
+        recordedKeyCode = KeyStroke.keyCode(for: preset.key)
+        applyModifiers(from: preset.modifiers)
+        updateKeyFieldDisplay()
+    }
+
+    // MARK: - Hardware Learning
+
+    private var pendingUsagePage: UInt32?
+    private var pendingUsage: UInt32?
+    private var pendingCookie: UInt32?
+    private var pendingKeyCode: CGKeyCode?
+    private var pendingValue: Int32?
+    private var isFinalizingLearning = false
+
+    @objc private func learnHardwareTapped() {
+        isLearningHardware = true
+        learnButton.title = "Press a button now..."
+        learnButton.isEnabled = false
+        
+        pendingUsagePage = nil
+        pendingUsage = nil
+        pendingCookie = nil
+        pendingKeyCode = nil
+        pendingValue = nil
+        isFinalizingLearning = false
+        
+        HIDListener.shared.setLearningCallback { [weak self] page, usage, cookie, value in
+            DispatchQueue.main.async {
+                self?.pendingUsagePage = page
+                self?.pendingUsage = usage
+                self?.pendingCookie = UInt32(cookie)
+                self?.pendingValue = value
+                self?.scheduleFinishLearning()
+            }
+        }
+        
+        EventTapManager.shared.setLearningCallback { [weak self] keyCode in
+            DispatchQueue.main.async {
+                self?.pendingKeyCode = keyCode
+                self?.scheduleFinishLearning()
+            }
+        }
+    }
+
+    @objc private func clearHardwareTapped() {
+        ConfigManager.shared.setHardwareBinding(forButton: buttonIndex, binding: nil)
+        updateHardwareDisplay()
+    }
+    
+    private func scheduleFinishLearning() {
+        guard !isFinalizingLearning else { return }
+        
+        // If we have both, finish immediately
+        if pendingUsage != nil && pendingKeyCode != nil {
+            isFinalizingLearning = true
+            finishLearning()
+            return
+        }
+        
+        // Timeout after 1 second if the other event doesn't arrive
+        isFinalizingLearning = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self = self else { return }
+            // Only finish if it hasn't somehow already been reset
+            if self.isLearningHardware {
+                self.finishLearning()
+            }
+        }
+    }
+
+    private func finishLearning() {
+        HIDListener.shared.setLearningCallback(nil)
+        EventTapManager.shared.setLearningCallback(nil)
+        isLearningHardware = false
+        learnButton.title = "Learn Hardware Trigger…"
+        learnButton.isEnabled = true
+        
+        let binding = HardwareBinding(
+            usagePage: pendingUsagePage,
+            usage: pendingUsage,
+            keyCode: pendingKeyCode.map { UInt16($0) },
+            cookie: pendingCookie,
+            value: pendingValue
+        )
+        ConfigManager.shared.setHardwareBinding(forButton: buttonIndex, binding: binding)
+        updateHardwareDisplay()
+        
+        // Small delay to ensure any trailing events from the same press are ignored
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isLearningHardware = false
+        }
+    }
+
+    private func updateHardwareDisplay() {
+        let bindings = ConfigManager.shared.hardwareBindingsForCurrentProfile()
+        if let binding = bindings[buttonIndex] {
+            if let code = binding.keyCode {
+                hardwareBindingLabel.stringValue = "Trigger: KeyCode 0x\(String(code, radix: 16))"
+            } else if let page = binding.usagePage, let usage = binding.usage {
+                var desc = String(format: "Trigger: Page 0x%X, Usage 0x%X", page, usage)
+                if let val = binding.value {
+                    desc += " (Value: \(val))"
+                }
+                hardwareBindingLabel.stringValue = desc
+            } else {
+                hardwareBindingLabel.stringValue = "Trigger: Custom"
+            }
+            clearHardwareButton.isHidden = false
+        } else {
+            hardwareBindingLabel.stringValue = "Trigger: (Default)"
+            clearHardwareButton.isHidden = true
         }
     }
 }

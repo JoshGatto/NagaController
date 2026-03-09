@@ -10,6 +10,14 @@ final class ButtonMapper {
         1: .keySequence(keys: [KeyStroke(key: "c", modifiers: ["cmd"])], description: "Copy"),
         2: .keySequence(keys: [KeyStroke(key: "v", modifiers: ["cmd"])], description: "Paste")
     ]
+    private var hypershiftMapping: [Int: ActionType] = [:]
+    private var hypershiftHolders: Set<Int> = []
+    private var isHypershiftToggled: Bool = false
+    private var lastHypershiftPressTime: CFAbsoluteTime = 0
+    
+    private var isHypershiftActive: Bool {
+        return !hypershiftHolders.isEmpty || isHypershiftToggled
+    }
 
     // Track active press-and-hold mappings (buttonIndex -> (keyCode, flags))
     private var activeHolds: [Int: (CGKeyCode, CGEventFlags)] = [:]
@@ -18,6 +26,11 @@ final class ButtonMapper {
     func updateMapping(_ newMapping: [Int: ActionType]) {
         self.mapping = newMapping
         NSLog("[Mapping] Updated mapping for \(newMapping.count) button(s)")
+    }
+
+    func updateHypershiftMapping(_ newMapping: [Int: ActionType]) {
+        self.hypershiftMapping = newMapping
+        NSLog("[Mapping] Updated hypershift mapping for \(newMapping.count) button(s)")
     }
 
     func handle(buttonIndex: Int) {
@@ -30,10 +43,26 @@ final class ButtonMapper {
 
     // Handle physical button press (down). For single-key mappings, send keyDown and remember for hold.
     func handlePress(buttonIndex: Int) {
-        guard let action = mapping[buttonIndex] else {
+        // Handle hypershift button
+        if let baseAction = mapping[buttonIndex], case .hypershift = baseAction {
+            hypershiftHolders.insert(buttonIndex)
+            lastHypershiftPressTime = CFAbsoluteTimeGetCurrent()
+            NSLog("[Mapping] Hypershift activated (physically held by button \(buttonIndex))")
+            return
+        }
+
+        let actionToPerform: ActionType?
+        if isHypershiftActive, let hAction = hypershiftMapping[buttonIndex] {
+            actionToPerform = hAction
+        } else {
+            actionToPerform = mapping[buttonIndex]
+        }
+
+        guard let action = actionToPerform else {
             NSLog("[Mapping] No action mapped for button \(buttonIndex).")
             return
         }
+        
         switch action {
         case .keySequence(let keys, _):
             if let stroke = keys.first, keys.count == 1 {
@@ -58,6 +87,24 @@ final class ButtonMapper {
 
     // Handle physical button release (up). If we are holding, send keyUp and clear state.
     func handleRelease(buttonIndex: Int) {
+        if let baseAction = mapping[buttonIndex], case .hypershift = baseAction {
+            hypershiftHolders.remove(buttonIndex)
+            
+            // TAP-TO-TOGGLE: If released very quickly, toggle the persistent state
+            let duration = CFAbsoluteTimeGetCurrent() - lastHypershiftPressTime
+            if duration < 0.300 { // 300ms threshold for a "tap"
+                isHypershiftToggled.toggle()
+                NSLog("[Mapping] Hypershift TAPPED -> Toggled to \(isHypershiftToggled)")
+            } else {
+                NSLog("[Mapping] Hypershift HELD -> Released")
+                // If it was a long hold, we should probably turn off the toggle too if the user wants "hold-to-override-toggle"
+                // But for now, let's keep it simple.
+            }
+            
+            NSLog("[Mapping] Hypershift state: holders=\(hypershiftHolders.count), toggled=\(isHypershiftToggled) (Active=\(isHypershiftActive))")
+            return
+        }
+        
         if let (keyCode, flags) = activeHolds.removeValue(forKey: buttonIndex) {
             if let eventUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
                 eventUp.flags = flags
@@ -82,7 +129,9 @@ final class ButtonMapper {
         case .macro(let steps, _):
             runMacro(steps)
         case .profileSwitch(let profile, _):
-            NSLog("[Mapping] Switch to profile: \(profile) (not implemented)")
+            ConfigManager.shared.setCurrentProfile(profile)
+        case .hypershift:
+            break
         }
     }
 

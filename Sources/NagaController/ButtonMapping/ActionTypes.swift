@@ -8,6 +8,7 @@ enum ActionType: Equatable {
     case textSnippet(text: String, description: String?)
     case macro(steps: [MacroStep], description: String?)
     case profileSwitch(profile: String, description: String?)
+    case hypershift
 }
 
 struct KeyStroke: Equatable, Codable {

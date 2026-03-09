@@ -17,6 +17,16 @@ struct Settings: Codable {
 
 struct Profile: Codable {
     var buttons: [String: ButtonAction]
+    var hardwareBindings: [String: HardwareBinding]?
+    var hypershiftMappings: [String: ButtonAction]?
+}
+
+struct HardwareBinding: Codable {
+    var usagePage: UInt32?
+    var usage: UInt32?
+    var keyCode: UInt16?
+    var cookie: UInt32?
+    var value: Int32?
 }
 
 struct ButtonAction: Codable {
@@ -89,6 +99,7 @@ final class ConfigManager {
         } else {
             ButtonMapper.shared.updateMapping(mapping)
         }
+        ButtonMapper.shared.updateHypershiftMapping(hypershiftMappingForCurrentProfile())
     }
 
     func setCurrentProfile(_ name: String) {
@@ -96,6 +107,7 @@ final class ConfigManager {
         currentProfileName = name
         UserDefaults.standard.set(name, forKey: kCurrentProfileKey)
         ButtonMapper.shared.updateMapping(mappingForCurrentProfile())
+        ButtonMapper.shared.updateHypershiftMapping(hypershiftMappingForCurrentProfile())
     }
 
     func getRemappingEnabled() -> Bool {
@@ -121,6 +133,32 @@ final class ConfigManager {
         return result
     }
 
+    func hypershiftMappingForCurrentProfile() -> [Int: ActionType] {
+        guard let profile = profiles[currentProfileName] else { return [:] }
+        var result: [Int: ActionType] = [:]
+        if let mappings = profile.hypershiftMappings {
+            for (key, action) in mappings {
+                if let idx = Int(key), let mapped = convert(action: action) {
+                    result[idx] = mapped
+                }
+            }
+        }
+        return result
+    }
+
+    func hardwareBindingsForCurrentProfile() -> [Int: HardwareBinding] {
+        guard let profile = profiles[currentProfileName] else { return [:] }
+        var result: [Int: HardwareBinding] = [:]
+        if let bindings = profile.hardwareBindings {
+            for (key, binding) in bindings {
+                if let idx = Int(key) {
+                    result[idx] = binding
+                }
+            }
+        }
+        return result
+    }
+
     // MARK: - Profile Management
 
     @discardableResult
@@ -130,7 +168,7 @@ final class ConfigManager {
         if let base = base, let p = profiles[base] {
             profiles[trimmed] = p
         } else {
-            profiles[trimmed] = Profile(buttons: [:])
+            profiles[trimmed] = Profile(buttons: [:], hardwareBindings: nil, hypershiftMappings: nil)
         }
         setCurrentProfile(trimmed)
         return true
@@ -166,6 +204,7 @@ final class ConfigManager {
         } else {
             // refresh mapping for current profile
             ButtonMapper.shared.updateMapping(mappingForCurrentProfile())
+            ButtonMapper.shared.updateHypershiftMapping(hypershiftMappingForCurrentProfile())
         }
         return true
     }
@@ -184,6 +223,7 @@ final class ConfigManager {
             setCurrentProfile(cp)
         } else {
             ButtonMapper.shared.updateMapping(mappingForCurrentProfile())
+            ButtonMapper.shared.updateHypershiftMapping(hypershiftMappingForCurrentProfile())
         }
     }
 
@@ -222,6 +262,8 @@ final class ConfigManager {
         case "profileSwitch":
             if let p = action.profile { return .profileSwitch(profile: p, description: action.description) }
             return nil
+        case "hypershift":
+            return .hypershift
         default:
             return nil
         }
@@ -241,12 +283,14 @@ final class ConfigManager {
             return ButtonAction(type: "macro", keys: nil, description: description, path: nil, command: nil, text: nil, steps: steps, profile: nil)
         case .profileSwitch(let profile, let description):
             return ButtonAction(type: "profileSwitch", keys: nil, description: description, path: nil, command: nil, text: nil, steps: nil, profile: profile)
+        case .hypershift:
+            return ButtonAction(type: "hypershift", keys: nil, description: "Hypershift Modifier", path: nil, command: nil, text: nil, steps: nil, profile: nil)
         }
     }
 
     // Update a single button's action in the current profile and refresh mapping
     func setAction(forButton index: Int, action: ActionType?) {
-        var profile = profiles[currentProfileName] ?? Profile(buttons: [:])
+        var profile = profiles[currentProfileName] ?? Profile(buttons: [:], hardwareBindings: nil, hypershiftMappings: nil)
         let key = String(index)
         if let action = action {
             profile.buttons[key] = toButtonAction(action)
@@ -256,6 +300,85 @@ final class ConfigManager {
         profiles[currentProfileName] = profile
         ButtonMapper.shared.updateMapping(mappingForCurrentProfile())
     }
+
+    func setHypershiftAction(forButton index: Int, action: ActionType?) {
+        var profile = profiles[currentProfileName] ?? Profile(buttons: [:], hardwareBindings: nil, hypershiftMappings: nil)
+        let key = String(index)
+        if profile.hypershiftMappings == nil { profile.hypershiftMappings = [:] }
+        
+        if let action = action {
+            profile.hypershiftMappings?[key] = toButtonAction(action)
+        } else {
+            profile.hypershiftMappings?.removeValue(forKey: key)
+        }
+        profiles[currentProfileName] = profile
+        ButtonMapper.shared.updateHypershiftMapping(hypershiftMappingForCurrentProfile())
+    }
+
+    func setHardwareBinding(forButton index: Int, binding: HardwareBinding?) {
+        var profile = profiles[currentProfileName] ?? Profile(buttons: [:], hardwareBindings: nil, hypershiftMappings: nil)
+        let key = String(index)
+        if profile.hardwareBindings == nil { profile.hardwareBindings = [:] }
+        
+        if let binding = binding {
+            profile.hardwareBindings?[key] = binding
+        } else {
+            profile.hardwareBindings?.removeValue(forKey: key)
+        }
+        profiles[currentProfileName] = profile
+        NotificationCenter.default.post(name: ConfigManager.didUpdateHardwareBindingsNotification, object: nil)
+        saveUserProfiles() // Ensure it's saved to disk
+    }
+
+    func getHardwareBinding(forUsage usage: UInt32, usagePage: UInt32, cookie: UInt32? = nil, value: Int32? = nil) -> HardwareBinding? {
+        guard let bindings = profiles[currentProfileName]?.hardwareBindings else { return nil }
+        
+        // 1. Try exact match (Usage, Page, Cookie, and Value if provided)
+        for (_, binding) in bindings {
+            if binding.usage == usage && binding.usagePage == usagePage {
+                let cookieMatches = (binding.cookie == nil || cookie == nil || binding.cookie == cookie)
+                let valueMatches = (binding.value == nil || value == nil || binding.value == value)
+                
+                if cookieMatches && valueMatches {
+                    // Favor bindings that match the specific value if multiple exist
+                    if binding.value == value {
+                        return binding
+                    }
+                }
+            }
+        }
+        
+        // 2. Fallback: Match Usage/Page/Cookie if no value-specific binding found
+        for (_, binding) in bindings {
+            if binding.usage == usage && binding.usagePage == usagePage {
+                let cookieMatches = (binding.cookie == nil || cookie == nil || binding.cookie == cookie)
+                if cookieMatches && binding.value == nil {
+                    return binding
+                }
+            }
+        }
+
+        // 3. Ultra-fallback: Match Usage/Page ONLY if there's exactly one binding for this usage/page
+        let candidates = bindings.values.filter { $0.usage == usage && $0.usagePage == usagePage }
+        if candidates.count == 1 {
+            NSLog("[Config] Ultra-fallback match for usage=0x\(String(usage, radix: 16)) pg=0x\(String(usagePage, radix: 16))")
+            return candidates[0]
+        }
+        
+        return nil
+    }
+
+    func getButtonIndex(forHardwareBinding binding: HardwareBinding) -> Int? {
+        guard let bindings = profiles[currentProfileName]?.hardwareBindings else { return nil }
+        for (key, b) in bindings {
+            if b.usage == binding.usage && b.usagePage == binding.usagePage && b.cookie == binding.cookie && b.value == binding.value {
+                return Int(key)
+            }
+        }
+        return nil
+    }
+
+    static let didUpdateHardwareBindingsNotification = Notification.Name("ConfigManager.didUpdateHardwareBindings")
 
     // Persist current profiles to Application Support
     func saveUserProfiles() {

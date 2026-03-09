@@ -181,7 +181,7 @@ final class MainViewController: NSViewController {
 
     @objc private func toggleChanged(_ sender: NSButton) {
         let enabled = (sender.state == .on)
-        EventTapManager.shared.isRemappingEnabled = enabled
+        EventTapManager.shared.start(listenOnly: !enabled)
         statusLabel.stringValue = enabled ? "Remapping enabled" : "Listen-only mode"
         ConfigManager.shared.setRemappingEnabled(enabled)
     }
