@@ -159,10 +159,23 @@ final class ActionEditorViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
-        self.view = NSView()
+        let glassyView = UIStyle.makeGlassyView()
+        self.view = glassyView
+        
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        glassyView.addSubview(container)
+        
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: glassyView.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: glassyView.trailingAnchor),
+            container.topAnchor.constraint(equalTo: glassyView.topAnchor),
+            container.bottomAnchor.constraint(equalTo: glassyView.bottomAnchor)
+        ])
 
         let header = NSTextField(labelWithString: "Edit Action — Button \(buttonIndex)")
-        header.font = .systemFont(ofSize: 15, weight: .semibold)
+        header.font = .systemFont(ofSize: 22, weight: .bold)
+        header.textColor = UIStyle.razerGreen
         
         layerSegmented.target = self
         layerSegmented.action = #selector(layerChanged)
@@ -173,42 +186,57 @@ final class ActionEditorViewController: NSViewController {
         segmented.selectedSegment = 0
 
         // Description
-        let descLabel = NSTextField(labelWithString: "Description (optional):")
-        descriptionField.placeholderString = "e.g. Copy"
+        let descLabel = NSTextField(labelWithString: "Label / Description:")
+        descLabel.font = .systemFont(ofSize: 11, weight: .black)
+        descLabel.textColor = NSColor.white.withAlphaComponent(0.3)
+        descriptionField.placeholderString = "e.g. Copy, Open App, Paste"
+        descriptionField.focusRingType = .none
 
         // Key UI
         keyField.translatesAutoresizingMaskIntoConstraints = false
-        keyField.placeholderString = "Press a key"
+        keyField.placeholderString = "Press a key..."
         keyField.alignment = .center
         keyField.isEditable = false
         keyField.drawsBackground = false
         keyField.isBordered = false
-        keyField.font = .systemFont(ofSize: 16, weight: .medium)
-        keyField.wantsLayer = true
-        keyField.layer?.cornerRadius = 8
-        keyField.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        keyField.layer?.borderColor = NSColor.separatorColor.cgColor
-        keyField.layer?.borderWidth = 1
-        keyField.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
-        keyField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        keyField.setContentCompressionResistancePriority(.required, for: .horizontal)
+        keyField.font = .systemFont(ofSize: 16, weight: .bold)
+        let keyFieldContainer = NSView()
+        keyFieldContainer.translatesAutoresizingMaskIntoConstraints = false
+        keyFieldContainer.wantsLayer = true
+        keyFieldContainer.layer?.cornerRadius = 8
+        keyFieldContainer.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
+        keyFieldContainer.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        keyFieldContainer.layer?.borderWidth = 1
+        keyFieldContainer.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        keyFieldContainer.heightAnchor.constraint(equalToConstant: 44).isActive = true
+
+        keyFieldContainer.addSubview(keyField)
+        NSLayoutConstraint.activate([
+            keyField.centerYAnchor.constraint(equalTo: keyFieldContainer.centerYAnchor),
+            keyField.leadingAnchor.constraint(equalTo: keyFieldContainer.leadingAnchor, constant: 8),
+            keyField.trailingAnchor.constraint(equalTo: keyFieldContainer.trailingAnchor, constant: -8)
+        ])
+        
         keyField.onKeyCaptured = { [weak self] event in
             self?.capture(event: event)
         }
-        keyField.onFocusChanged = { [weak keyField] focused in
-            keyField?.layer?.borderColor = (focused ? NSColor.systemBlue.cgColor : NSColor.separatorColor.cgColor)
-            keyField?.layer?.borderWidth = focused ? 2 : 1
+        keyField.onFocusChanged = { [weak keyFieldContainer] focused in
+            keyFieldContainer?.layer?.borderColor = (focused ? UIStyle.razerGreen.withAlphaComponent(0.6).cgColor : NSColor.white.withAlphaComponent(0.12).cgColor)
+            keyFieldContainer?.layer?.borderWidth = focused ? 2 : 1
+            keyFieldContainer?.layer?.backgroundColor = focused ? NSColor.white.withAlphaComponent(0.1).cgColor : NSColor.white.withAlphaComponent(0.05).cgColor
         }
 
         [modCmd, modAlt, modCtrl, modShift].forEach { button in
             button.target = self
             button.action = #selector(modifierCheckboxChanged(_:))
+            button.font = .systemFont(ofSize: 14, weight: .medium)
         }
 
-        let keyRow = NSStackView(views: [NSTextField(labelWithString: "Key:"), keyField, NSView()])
-        keyRow.spacing = 8
+        let keyRow = NSStackView(views: [NSTextField(labelWithString: "Key:"), keyFieldContainer])
+        keyRow.spacing = 12
+        keyRow.alignment = .centerY
         
-        presetsPopup.addItem(withTitle: "Presets…")
+        presetsPopup.addItem(withTitle: "Quick Presets…")
         for p in presets {
             if p.isHeader {
                 presetsPopup.menu?.addItem(NSMenuItem.separator())
@@ -223,12 +251,13 @@ final class ActionEditorViewController: NSViewController {
         presetsPopup.action = #selector(presetSelected)
         
         let modsRow = NSStackView(views: [NSTextField(labelWithString: "Modifiers:"), modCmd, modAlt, modCtrl, modShift, NSView(), presetsPopup])
-        modsRow.spacing = 8
-        let keyHint = NSTextField(labelWithString: "Click the capture box above, then press the keyboard shortcut you want to record (e.g. ⇧⌘4).")
+        modsRow.spacing = 10
+        modsRow.alignment = .centerY
+
+        let keyHint = NSTextField(labelWithString: "Focus the capture box, then press your shortcut.")
         keyHint.font = .systemFont(ofSize: 11)
-        keyHint.textColor = .secondaryLabelColor
-        keyHint.lineBreakMode = .byWordWrapping
-        keyHint.maximumNumberOfLines = 2
+        keyHint.textColor = NSColor.white.withAlphaComponent(0.4)
+        
         let keyGroup = group("Key Sequence", views: [keyRow, modsRow, keyHint])
 
         // App UI
@@ -237,144 +266,157 @@ final class ActionEditorViewController: NSViewController {
         let browse = NSButton(title: "Browse…", target: self, action: #selector(browseApp))
         browse.image = UIStyle.symbol("folder", size: 13)
         browse.imagePosition = .imageLeading
-        let appRow = NSStackView(views: [NSTextField(labelWithString: "Application:"), appPath, browse])
-        appRow.spacing = 8
+        UIStyle.styleSecondaryButton(browse)
+        browse.widthAnchor.constraint(equalToConstant: 96).isActive = true
+        browse.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        browse.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
+        appPath.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        
+        let appRow = NSStackView(views: [NSTextField(labelWithString: "Path:"), appPath, browse])
+        appRow.spacing = 12
+        appRow.alignment = .centerY
         let appGroup = group("Application", views: [appRow])
 
         // Command UI
         commandField.placeholderString = "e.g. say Hello or osascript …"
-        if #available(macOS 10.15, *) {
-            commandField.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        }
-        let cmdRow = NSStackView(views: [NSTextField(labelWithString: "Command:"), commandField])
-        cmdRow.spacing = 8
+        commandField.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        let cmdRow = NSStackView(views: [NSTextField(labelWithString: "Script:"), commandField])
+        cmdRow.spacing = 12
+        cmdRow.alignment = .centerY
         let cmdGroup = group("System Command", views: [cmdRow])
 
         // Text Snippet UI
         textSnippetView.isAutomaticQuoteSubstitutionEnabled = false
-        textSnippetView.isAutomaticDashSubstitutionEnabled = false
-        textSnippetView.isAutomaticLinkDetectionEnabled = false
-        textSnippetView.isRichText = false
-        textSnippetView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        textSnippetView.textContainerInset = NSSize(width: 6, height: 6)
-        textSnippetView.backgroundColor = .textBackgroundColor
-        textSnippetView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textSnippetView.isVerticallyResizable = true
-        textSnippetView.isHorizontallyResizable = false
-        textSnippetView.textContainer?.widthTracksTextView = true
+        textSnippetView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textSnippetView.textContainerInset = NSSize(width: 8, height: 8)
+        textSnippetView.backgroundColor = NSColor.white.withAlphaComponent(0.05)
+        textSnippetView.textColor = .white
 
         textSnippetScroll.documentView = textSnippetView
         textSnippetScroll.hasVerticalScroller = true
-        textSnippetScroll.borderType = .bezelBorder
+        textSnippetScroll.borderType = .noBorder
+        textSnippetScroll.drawsBackground = false
+        textSnippetScroll.wantsLayer = true
+        textSnippetScroll.layer?.cornerRadius = 8
+        textSnippetScroll.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
         textSnippetScroll.translatesAutoresizingMaskIntoConstraints = false
-        textSnippetScroll.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        textSnippetScroll.heightAnchor.constraint(equalToConstant: 140).isActive = true
 
-        let textHint = NSTextField(labelWithString: "Type the text you want this button to output. It will be sent exactly as written when pressed.")
-        textHint.font = .systemFont(ofSize: 11)
-        textHint.textColor = .secondaryLabelColor
-        textHint.lineBreakMode = .byWordWrapping
-        textHint.maximumNumberOfLines = 2
-        let textGroup = group("Text Snippet", views: [textSnippetScroll, textHint])
+        let textGroup = group("Text Snippet", views: [textSnippetScroll])
 
         // Profile UI
         let profLabel = NSTextField(labelWithString: "Profile:")
         profilePopup.addItems(withTitles: ConfigManager.shared.availableProfiles())
         let profRow = NSStackView(views: [profLabel, profilePopup])
-        profRow.spacing = 8
+        profRow.spacing = 12
+        profRow.alignment = .centerY
         let profGroup = group("Profile Switch", views: [profRow])
 
         // Hypershift UI
-        let hsHint = NSTextField(labelWithString: "This button will act as the Hypershift modifier. While held down, it unlocks the secondary set of functions on all other buttons.")
-        hsHint.font = .systemFont(ofSize: 11)
-        hsHint.textColor = .secondaryLabelColor
+        let hsHint = NSTextField(labelWithString: "Acting as Hypershift modifier: while held, this button unlocks secondary functions on all other keys.")
+        hsHint.font = .systemFont(ofSize: 12)
+        hsHint.textColor = NSColor.white.withAlphaComponent(0.6)
         hsHint.lineBreakMode = .byWordWrapping
         hsHint.maximumNumberOfLines = 3
-        let hsGroup = group("Hypershift Modifier", views: [hsHint])
+        let hsGroup = group("Hypershift Active", views: [hsHint])
 
         // Content stack
         contentStack.orientation = .vertical
-        contentStack.spacing = 10
+        contentStack.spacing = 16
+        contentStack.alignment = .leading
         contentStack.translatesAutoresizingMaskIntoConstraints = false
 
         let descStack = NSStackView(views: [descLabel, descriptionField])
-        descStack.spacing = 6
+        descStack.orientation = .vertical
+        descStack.spacing = 8
+        descStack.alignment = .leading
 
         let buttonsStack = NSStackView()
         buttonsStack.orientation = .horizontal
-        buttonsStack.spacing = 8
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
-        cancel.image = UIStyle.symbol("xmark.circle", size: 14)
-        cancel.imagePosition = .imageLeading
-        cancel.keyEquivalent = "\u{1b}"
-        cancel.toolTip = "Close without saving"
+        buttonsStack.spacing = 12
+        
+        let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
+        cancelButton.image = UIStyle.symbol("xmark", size: 14)
+        cancelButton.imagePosition = .imageLeading
+        cancelButton.keyEquivalent = "\u{1b}"
+        UIStyle.styleSecondaryButton(cancelButton)
+        cancelButton.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        cancelButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
 
-        let save = NSButton(title: "Save", target: self, action: #selector(saveTapped))
-        save.image = UIStyle.symbol("tray.and.arrow.down", size: 14, weight: .semibold)
-        save.imagePosition = .imageLeading
-        save.keyEquivalent = "\r"
-        save.toolTip = "Save changes"
+        let saveButton = NSButton(title: "Save", target: self, action: #selector(saveTapped))
+        saveButton.image = UIStyle.symbol("checkmark.circle.fill", size: 14, weight: .bold)
+        saveButton.imagePosition = .imageLeading
+        saveButton.keyEquivalent = "\r"
+        UIStyle.stylePrimaryButton(saveButton)
+        saveButton.widthAnchor.constraint(equalToConstant: 100).isActive = true
+        saveButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
         
         learnButton.target = self
         learnButton.action = #selector(learnHardwareTapped)
-        learnButton.font = .systemFont(ofSize: 12)
         UIStyle.styleSecondaryButton(learnButton)
+        learnButton.widthAnchor.constraint(equalToConstant: 190).isActive = true
+        learnButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         
         clearHardwareButton.target = self
         clearHardwareButton.action = #selector(clearHardwareTapped)
-        clearHardwareButton.image = UIStyle.symbol("xmark.circle.fill", size: 12)
+        clearHardwareButton.image = UIStyle.symbol("xmark.circle.fill", size: 14)
         clearHardwareButton.isBordered = false
-        clearHardwareButton.toolTip = "Reset to default button mapping"
         
         hardwareBindingLabel.font = .systemFont(ofSize: 11)
-        hardwareBindingLabel.textColor = .secondaryLabelColor
+        hardwareBindingLabel.textColor = NSColor.white.withAlphaComponent(0.3)
         
         let hardwareStack = NSStackView(views: [hardwareBindingLabel, learnButton, clearHardwareButton])
-        hardwareStack.spacing = 8
+        hardwareStack.spacing = 10
+        hardwareStack.alignment = .centerY
 
         buttonsStack.addArrangedSubview(hardwareStack)
-        buttonsStack.addArrangedSubview(NSView())
-        buttonsStack.addArrangedSubview(cancel)
-        buttonsStack.addArrangedSubview(save)
+        buttonsStack.addArrangedSubview(NSView()) // Spacer
+        buttonsStack.addArrangedSubview(cancelButton)
+        buttonsStack.addArrangedSubview(saveButton)
 
-        view.addSubview(header)
-        view.addSubview(layerSegmented)
-        view.addSubview(segmented)
-        view.addSubview(descStack)
-        view.addSubview(contentStack)
-        view.addSubview(buttonsStack)
+        container.addSubview(header)
+        container.addSubview(layerSegmented)
+        container.addSubview(segmented)
+        container.addSubview(descStack)
+        container.addSubview(contentStack)
+        container.addSubview(buttonsStack)
 
         for v in [header, layerSegmented, segmented, descStack, contentStack, buttonsStack] { v.translatesAutoresizingMaskIntoConstraints = false }
 
         NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
-            header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            header.topAnchor.constraint(equalTo: container.topAnchor, constant: 32),
+            header.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 32),
             
-            layerSegmented.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
-            layerSegmented.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            layerSegmented.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 20),
+            layerSegmented.centerXAnchor.constraint(equalTo: container.centerXAnchor),
 
-            segmented.topAnchor.constraint(equalTo: layerSegmented.bottomAnchor, constant: 14),
-            segmented.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            segmented.topAnchor.constraint(equalTo: layerSegmented.bottomAnchor, constant: 24),
+            segmented.centerXAnchor.constraint(equalTo: container.centerXAnchor),
 
-            descStack.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 10),
-            descStack.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            descStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            descStack.topAnchor.constraint(equalTo: segmented.bottomAnchor, constant: 24),
+            descStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 32),
+            descStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -32),
 
-            contentStack.topAnchor.constraint(equalTo: descStack.bottomAnchor, constant: 12),
-            contentStack.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            contentStack.topAnchor.constraint(equalTo: descStack.bottomAnchor, constant: 20),
+            contentStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 32),
+            contentStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -32),
 
-            buttonsStack.topAnchor.constraint(greaterThanOrEqualTo: contentStack.bottomAnchor, constant: 12),
-            buttonsStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            buttonsStack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
+            buttonsStack.topAnchor.constraint(greaterThanOrEqualTo: contentStack.bottomAnchor, constant: 32),
+            buttonsStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 32),
+            buttonsStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -32),
+            buttonsStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -32),
+            
+            container.widthAnchor.constraint(equalToConstant: 540),
+            container.heightAnchor.constraint(greaterThanOrEqualToConstant: 600)
         ])
 
         // Add groups and show first
-        contentStack.addArrangedSubview(keyGroup)
-        contentStack.addArrangedSubview(appGroup)
-        contentStack.addArrangedSubview(cmdGroup)
-        contentStack.addArrangedSubview(textGroup)
-        contentStack.addArrangedSubview(profGroup)
-        contentStack.addArrangedSubview(hsGroup)
+        let groups = [keyGroup, appGroup, cmdGroup, textGroup, profGroup, hsGroup]
+        for (i, groupView) in groups.enumerated() {
+            contentStack.addArrangedSubview(groupView)
+            groupView.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        }
         selectGroup(index: 0)
 
         preloadCurrent()
@@ -385,14 +427,38 @@ final class ActionEditorViewController: NSViewController {
     }
 
     private func group(_ title: String, views: [NSView]) -> NSView {
-        let stack = NSStackView()
+        let box = UIStyle.makeCard()
+        
+        let header = NSTextField(labelWithString: title.uppercased())
+        header.font = .systemFont(ofSize: 11, weight: .black)
+        header.textColor = NSColor.white.withAlphaComponent(0.2)
+        
+        let stack = NSStackView(views: views)
         stack.orientation = .vertical
-        stack.spacing = 6
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        stack.addArrangedSubview(titleLabel)
-        views.forEach { stack.addArrangedSubview($0) }
-        return stack
+        stack.spacing = 16
+        stack.alignment = .leading
+        
+        for v in views {
+            v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        let outer = NSStackView(views: [header, stack])
+        outer.orientation = .vertical
+        outer.spacing = 12
+        outer.alignment = .leading
+        
+        stack.widthAnchor.constraint(equalTo: outer.widthAnchor).isActive = true
+        
+        box.addSubview(outer)
+        outer.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            outer.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 20),
+            outer.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -20),
+            outer.topAnchor.constraint(equalTo: box.topAnchor, constant: 20),
+            outer.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -20)
+        ])
+        
+        return box
     }
 
     override func viewDidAppear() {
