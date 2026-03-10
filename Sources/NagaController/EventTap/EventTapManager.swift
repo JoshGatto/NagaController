@@ -27,7 +27,17 @@ final class EventTapManager {
         let mask = (
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.keyUp.rawValue) |
-            (1 << CGEventType.flagsChanged.rawValue)
+            (1 << CGEventType.flagsChanged.rawValue) |
+            (1 << CGEventType.leftMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue) |
+            (1 << CGEventType.rightMouseDown.rawValue) |
+            (1 << CGEventType.rightMouseUp.rawValue) |
+            (1 << CGEventType.otherMouseDown.rawValue) |
+            (1 << CGEventType.otherMouseUp.rawValue) |
+            (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.rightMouseDragged.rawValue) |
+            (1 << CGEventType.otherMouseDragged.rawValue) |
+            (1 << CGEventType.scrollWheel.rawValue)
         )
 
         NSLog("[EventTap] Starting with listenOnly=\(listenOnly). Remapping should be \(listenOnly ? "DISABLED (Listen Only)" : "ENABLED (Blocking)").")
@@ -99,15 +109,16 @@ final class EventTapManager {
             return Unmanaged.passUnretained(event)
         }
 
-        guard type == .keyDown || type == .keyUp || type == .flagsChanged else {
-            return Unmanaged.passUnretained(event)
-        }
-
         // Inject synthetic flags from mouse-held modifiers (standalone modifiers)
         let mouseMods = ButtonMapper.shared.currentModifierFlags
         if !mouseMods.isEmpty {
-            // Apply mouse modifiers to this event
+            // Apply mouse modifiers to this event (keyboard or mouse)
             event.flags = event.flags.union(mouseMods)
+        }
+
+        // Only handle remapping/blocking logic for keyboard events
+        guard type == .keyDown || type == .keyUp || type == .flagsChanged else {
+            return Unmanaged.passUnretained(event)
         }
 
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
