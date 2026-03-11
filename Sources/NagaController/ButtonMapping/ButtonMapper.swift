@@ -171,7 +171,56 @@ final class ButtonMapper {
             ConfigManager.shared.setCurrentProfile(profile)
         case .hypershift:
             break
+        case .mediaKey(let key, _):
+            sendMediaKey(key)
         }
+    }
+
+    private func sendMediaKey(_ key: MediaKeyType) {
+        // Handle non-media special OS keys using standard CGEvent emulation
+        switch key {
+        case .showDesktop:
+            sendKeyStroke(KeyStroke(key: "f11", modifiers: [], keyCode: UInt16(kVK_F11)))
+            return
+        case .missionControl:
+            sendKeyStroke(KeyStroke(key: "up arrow", modifiers: ["ctrl"], keyCode: UInt16(kVK_UpArrow)))
+            return
+        case .appExpose:
+            sendKeyStroke(KeyStroke(key: "down arrow", modifiers: ["ctrl"], keyCode: UInt16(kVK_DownArrow)))
+            return
+        case .launchpad:
+            sendKeyStroke(KeyStroke(key: "f4", modifiers: [], keyCode: UInt16(kVK_F4)))
+            return
+        default: break
+        }
+
+        // True NX_SYSDEFINED media keys
+        let EV_KEY: Int16 = 8 // NX_SYSDEFINED
+        let keyDown = NSEvent.otherEvent(
+            with: .systemDefined,
+            location: .zero,
+            modifierFlags: ProcessInfo.processInfo.activeProcessorCount > 0 ? NSEvent.ModifierFlags(rawValue: 0xa00) : [], // Magic flags sometimes needed
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            subtype: EV_KEY,
+            data1: Int((key.rawValue << 16) | (0xa << 8)), // Key down
+            data2: -1
+        )
+        let keyUp = NSEvent.otherEvent(
+            with: .systemDefined,
+            location: .zero,
+            modifierFlags: ProcessInfo.processInfo.activeProcessorCount > 0 ? NSEvent.ModifierFlags(rawValue: 0xb00) : [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            subtype: EV_KEY,
+            data1: Int((key.rawValue << 16) | (0xb << 8)), // Key up
+            data2: -1
+        )
+
+        keyDown?.cgEvent?.post(tap: CGEventTapLocation.cghidEventTap)
+        keyUp?.cgEvent?.post(tap: CGEventTapLocation.cghidEventTap)
     }
 
     private func sendKeyStroke(_ stroke: KeyStroke) {

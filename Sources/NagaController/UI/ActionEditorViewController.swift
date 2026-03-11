@@ -55,7 +55,7 @@ final class ActionEditorViewController: NSViewController {
     private let onComplete: (ActionType?) -> Void
     private var initialRemappingState: Bool = false
     
-    private let segmented = NSSegmentedControl(labels: ["Key", "App", "Cmd", "Text", "Profile", "Hypershift"], trackingMode: .selectOne, target: nil, action: nil)
+    private let segmented = NSSegmentedControl(labels: ["Key", "App", "Cmd", "Text", "Profile", "macOS", "Hypershift"], trackingMode: .selectOne, target: nil, action: nil)
     private let layerSegmented = NSSegmentedControl(labels: ["Standard Layer", "Hypershift Layer"], trackingMode: .selectOne, target: nil, action: nil)
     
     // Temporary storage for edits before saving
@@ -92,33 +92,6 @@ final class ActionEditorViewController: NSViewController {
         ShortcutPreset(name: "Redo", key: "z", modifiers: ["cmd", "shift"], isHeader: false),
         ShortcutPreset(name: "Select All", key: "a", modifiers: ["cmd"], isHeader: false),
         
-        .header("System"),
-        ShortcutPreset(name: "Mission Control", key: "up arrow", modifiers: ["ctrl"], isHeader: false),
-        ShortcutPreset(name: "Application Windows", key: "down arrow", modifiers: ["ctrl"], isHeader: false),
-        ShortcutPreset(name: "Show Desktop", key: "f11", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "Spotlight", key: "space", modifiers: ["cmd"], isHeader: false),
-        ShortcutPreset(name: "Siri", key: "space", modifiers: ["cmd"], isHeader: false), // Note: user might need to adjust
-        
-        .header("Navigation"),
-        ShortcutPreset(name: "Switch App", key: "tab", modifiers: ["cmd"], isHeader: false),
-        ShortcutPreset(name: "Switch Window", key: "`", modifiers: ["cmd"], isHeader: false),
-        ShortcutPreset(name: "Back", key: "[", modifiers: ["cmd"], isHeader: false),
-        ShortcutPreset(name: "Forward", key: "]", modifiers: ["cmd"], isHeader: false),
-        
-        .header("Function Keys"),
-        ShortcutPreset(name: "F1", key: "f1", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F2", key: "f2", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F3", key: "f3", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F4", key: "f4", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F5", key: "f5", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F6", key: "f6", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F7", key: "f7", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F8", key: "f8", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F9", key: "f9", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F10", key: "f10", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F11", key: "f11", modifiers: [], isHeader: false),
-        ShortcutPreset(name: "F12", key: "f12", modifiers: [], isHeader: false),
-        
         .header("Modifier Keys"),
         ShortcutPreset(name: "Command", key: "command", modifiers: [], isHeader: false),
         ShortcutPreset(name: "Shift", key: "shift", modifiers: [], isHeader: false),
@@ -130,6 +103,10 @@ final class ActionEditorViewController: NSViewController {
     // Text Snippet
     private let textSnippetView = NSTextView(frame: .zero)
     private let textSnippetScroll = NSScrollView(frame: .zero)
+
+    // macOS / Media Keys
+    private var selectedMediaKey: MediaKeyType = .playPause
+    private let macosPopup = NSPopUpButton(frame: .zero, pullsDown: false)
 
     private let contentStack = NSStackView()
     
@@ -313,6 +290,18 @@ final class ActionEditorViewController: NSViewController {
         profRow.alignment = .centerY
         let profGroup = group("Profile Switch", views: [profRow])
 
+        // macOS / Media UI
+        for caseType in MediaKeyType.allCases {
+            macosPopup.addItem(withTitle: caseType.label)
+        }
+        macosPopup.action = #selector(macosPresetSelected)
+        macosPopup.target = self
+        
+        let macosRow = NSStackView(views: [NSTextField(labelWithString: "Select Action:"), macosPopup])
+        macosRow.spacing = 12
+        macosRow.alignment = .centerY
+        let macosGroup = group("macOS / Media Keys", views: [macosRow])
+
         // Hypershift UI
         let hsHint = NSTextField(labelWithString: "Acting as Hypershift modifier: while held, this button unlocks secondary functions on all other keys.")
         hsHint.font = .systemFont(ofSize: 12)
@@ -412,8 +401,8 @@ final class ActionEditorViewController: NSViewController {
         ])
 
         // Add groups and show first
-        let groups = [keyGroup, appGroup, cmdGroup, textGroup, profGroup, hsGroup]
-        for (i, groupView) in groups.enumerated() {
+        let groups = [keyGroup, appGroup, cmdGroup, textGroup, profGroup, macosGroup, hsGroup]
+        for groupView in groups {
             contentStack.addArrangedSubview(groupView)
             groupView.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         }
@@ -542,10 +531,16 @@ final class ActionEditorViewController: NSViewController {
             descriptionField.stringValue = d ?? ""
             segmented.selectedSegment = 4
             selectGroup(index: 4)
-        case .hypershift:
-            descriptionField.stringValue = ""
+        case .mediaKey(let key, let desc):
+            macosPopup.selectItem(withTitle: key.label)
+            selectedMediaKey = key
+            descriptionField.stringValue = desc ?? ""
             segmented.selectedSegment = 5
             selectGroup(index: 5)
+        case .hypershift:
+            descriptionField.stringValue = ""
+            segmented.selectedSegment = 6
+            selectGroup(index: 6)
         case .macro:
             // Not supported in this lightweight editor yet
             break
@@ -605,6 +600,8 @@ final class ActionEditorViewController: NSViewController {
         case 4:
             if let title = profilePopup.titleOfSelectedItem { return .profileSwitch(profile: title, description: desc) } else { return nil }
         case 5:
+            return .mediaKey(key: selectedMediaKey, description: desc)
+        case 6:
             return .hypershift
         default:
             return nil
@@ -710,6 +707,12 @@ final class ActionEditorViewController: NSViewController {
         recordedKeyCode = KeyStroke.keyCode(for: preset.key)
         applyModifiers(from: preset.modifiers)
         updateKeyFieldDisplay()
+    }
+    
+    @objc private func macosPresetSelected() {
+        guard let title = macosPopup.titleOfSelectedItem, 
+              let key = MediaKeyType.allCases.first(where: { $0.label == title }) else { return }
+        selectedMediaKey = key
     }
 
     // MARK: - Hardware Learning

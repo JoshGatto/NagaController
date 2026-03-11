@@ -194,6 +194,8 @@ final class MouseMappingView: NSView {
             return d ?? "Switch Profile: \(p)"
         case .hypershift:
             return "Hypershift Modifier"
+        case .mediaKey(let key, let d):
+            return d ?? key.label
         }
     }
 }

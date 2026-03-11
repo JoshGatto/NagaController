@@ -406,6 +406,8 @@ final class MappingViewController: NSViewController {
             return d ?? "Profile: \(p)"
         case .hypershift:
             return "Hypershift Modifier"
+        case .mediaKey(let key, let d):
+            return d ?? key.label
         }
     }
 

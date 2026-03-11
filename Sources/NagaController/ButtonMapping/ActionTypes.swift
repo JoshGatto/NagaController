@@ -9,6 +9,39 @@ enum ActionType: Equatable {
     case macro(steps: [MacroStep], description: String?)
     case profileSwitch(profile: String, description: String?)
     case hypershift
+    case mediaKey(key: MediaKeyType, description: String?)
+}
+
+enum MediaKeyType: Int, Codable, CaseIterable {
+    case playPause = 16  // NX_KEYTYPE_PLAY
+    case nextTrack = 17  // NX_KEYTYPE_NEXT
+    case prevTrack = 18  // NX_KEYTYPE_PREVIOUS
+    case volumeUp = 0    // NX_KEYTYPE_SOUND_UP
+    case volumeDown = 1  // NX_KEYTYPE_SOUND_DOWN
+    case mute = 7        // NX_KEYTYPE_MUTE
+    case brightnessUp = 2 // NX_KEYTYPE_BRIGHTNESS_UP
+    case brightnessDown = 3 // NX_KEYTYPE_BRIGHTNESS_DOWN
+    case showDesktop = 55 // CGKeyCode for F11
+    case missionControl = 126 // Up arrow + Ctrl
+    case appExpose = 125 // Down arrow + Ctrl
+    case launchpad = 130 // Just an example, maybe F4 (118)
+    
+    var label: String {
+        switch self {
+        case .playPause: return "Play/Pause"
+        case .nextTrack: return "Next Track"
+        case .prevTrack: return "Previous Track"
+        case .volumeUp: return "Volume Up"
+        case .volumeDown: return "Volume Down"
+        case .mute: return "Mute"
+        case .brightnessUp: return "Brightness Up"
+        case .brightnessDown: return "Brightness Down"
+        case .showDesktop: return "Show Desktop"
+        case .missionControl: return "Mission Control"
+        case .appExpose: return "App Exposé"
+        case .launchpad: return "Launchpad"
+        }
+    }
 }
 
 struct KeyStroke: Equatable, Codable {

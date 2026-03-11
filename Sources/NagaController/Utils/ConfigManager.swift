@@ -38,6 +38,7 @@ struct ButtonAction: Codable {
     let text: String? // for textSnippet
     let steps: [MacroStep]? // for macro
     let profile: String? // for profileSwitch
+    let mediaKey: Int? // for mediaKey
 }
 
 final class ConfigManager {
@@ -264,6 +265,11 @@ final class ConfigManager {
             return nil
         case "hypershift":
             return .hypershift
+        case "mediaKey":
+            if let mkRaw = action.mediaKey, let mk = MediaKeyType(rawValue: mkRaw) {
+                return .mediaKey(key: mk, description: action.description)
+            }
+            return nil
         default:
             return nil
         }
@@ -272,19 +278,21 @@ final class ConfigManager {
     private func toButtonAction(_ action: ActionType) -> ButtonAction {
         switch action {
         case .keySequence(let keys, let description):
-            return ButtonAction(type: "keySequence", keys: keys, description: description, path: nil, command: nil, text: nil, steps: nil, profile: nil)
+            return ButtonAction(type: "keySequence", keys: keys, description: description, path: nil, command: nil, text: nil, steps: nil, profile: nil, mediaKey: nil)
         case .application(let path, let description):
-            return ButtonAction(type: "application", keys: nil, description: description, path: path, command: nil, text: nil, steps: nil, profile: nil)
+            return ButtonAction(type: "application", keys: nil, description: description, path: path, command: nil, text: nil, steps: nil, profile: nil, mediaKey: nil)
         case .systemCommand(let command, let description):
-            return ButtonAction(type: "systemCommand", keys: nil, description: description, path: nil, command: command, text: nil, steps: nil, profile: nil)
+            return ButtonAction(type: "systemCommand", keys: nil, description: description, path: nil, command: command, text: nil, steps: nil, profile: nil, mediaKey: nil)
         case .textSnippet(let text, let description):
-            return ButtonAction(type: "textSnippet", keys: nil, description: description, path: nil, command: nil, text: text, steps: nil, profile: nil)
+            return ButtonAction(type: "textSnippet", keys: nil, description: description, path: nil, command: nil, text: text, steps: nil, profile: nil, mediaKey: nil)
         case .macro(let steps, let description):
-            return ButtonAction(type: "macro", keys: nil, description: description, path: nil, command: nil, text: nil, steps: steps, profile: nil)
+            return ButtonAction(type: "macro", keys: nil, description: description, path: nil, command: nil, text: nil, steps: steps, profile: nil, mediaKey: nil)
         case .profileSwitch(let profile, let description):
-            return ButtonAction(type: "profileSwitch", keys: nil, description: description, path: nil, command: nil, text: nil, steps: nil, profile: profile)
+            return ButtonAction(type: "profileSwitch", keys: nil, description: description, path: nil, command: nil, text: nil, steps: nil, profile: profile, mediaKey: nil)
         case .hypershift:
-            return ButtonAction(type: "hypershift", keys: nil, description: "Hypershift Modifier", path: nil, command: nil, text: nil, steps: nil, profile: nil)
+            return ButtonAction(type: "hypershift", keys: nil, description: "Hypershift Modifier", path: nil, command: nil, text: nil, steps: nil, profile: nil, mediaKey: nil)
+        case .mediaKey(let key, let description):
+            return ButtonAction(type: "mediaKey", keys: nil, description: description, path: nil, command: nil, text: nil, steps: nil, profile: nil, mediaKey: key.rawValue)
         }
     }
 
